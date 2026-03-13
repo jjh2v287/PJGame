@@ -9,7 +9,6 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/Pawn.h"
 #include "InputAction.h"
-#include "InputMappingContext.h"
 #include "Math/RotationMatrix.h"
 
 APJTopDownPlayerController::APJTopDownPlayerController()
@@ -51,11 +50,11 @@ void APJTopDownPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::Move);
 	}
 
-	if (ClickAction)
+	if (MouseLeftDownAction)
 	{
 		// 마우스 클릭 시(혹은 설정된 키가 눌렸을 때) 한 번 호출됩니다.
 		// 누르고 있을 때 계속 호출되기를 원하신다면 ETriggerEvent::Triggered 로 변경하시면 됩니다.
-		EnhancedInputComponent->BindAction(ClickAction, ETriggerEvent::Started, this, &ThisClass::OnClickStarted);
+		EnhancedInputComponent->BindAction(MouseLeftDownAction, ETriggerEvent::Triggered, this, &ThisClass::OnMouseLeftDown);
 	}
 }
 
@@ -109,7 +108,7 @@ void APJTopDownPlayerController::Move(const FInputActionValue& Value)
 	ControlledPawn->AddMovementInput(RightDirection, MovementVector.X);
 }
 
-void APJTopDownPlayerController::OnClickStarted()
+void APJTopDownPlayerController::OnMouseLeftDown()
 {
 	FHitResult HitResult;
 	// 마우스 커서 위치로 레이캐스트를 쏴서 월드 상의 타격점을 구함

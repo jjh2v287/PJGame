@@ -30,12 +30,12 @@ protected:
 	TObjectPtr<UInputAction> MoveAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> ClickAction;
+	TObjectPtr<UInputAction> MouseLeftDownAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TopDown")
 	TEnumAsByte<ECollisionChannel> CursorTraceChannel = ECC_Visibility;
 
 private:
 	void Move(const FInputActionValue& Value);
-	void OnClickStarted();
+	void OnMouseLeftDown();
 };
