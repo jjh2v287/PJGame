@@ -21,6 +21,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
+	virtual void PlayerTick(float DeltaTime) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -29,22 +30,12 @@ protected:
 	TObjectPtr<UInputAction> MoveAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> SetDestinationAction;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TopDown")
-	float ShortPressThreshold = 0.2f;
+	TObjectPtr<UInputAction> ClickAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TopDown")
 	TEnumAsByte<ECollisionChannel> CursorTraceChannel = ECC_Visibility;
 
 private:
 	void Move(const FInputActionValue& Value);
-	void OnSetDestinationStarted();
-	void OnSetDestinationTriggered();
-	void OnSetDestinationReleased();
-	bool TryUpdateCursorDestination(FVector& OutDestination) const;
-
-	FVector CachedDestination = FVector::ZeroVector;
-	float FollowTime = 0.f;
-	bool bHasValidDestination = false;
+	void OnClickStarted();
 };

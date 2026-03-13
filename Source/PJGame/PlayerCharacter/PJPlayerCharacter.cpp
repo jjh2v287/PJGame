@@ -9,7 +9,7 @@
 
 APJPlayerCharacter::APJPlayerCharacter()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.f);
 
@@ -18,12 +18,12 @@ APJPlayerCharacter::APJPlayerCharacter()
 	bUseControllerRotationRoll = false;
 
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	MovementComponent->bOrientRotationToMovement = true;
+	MovementComponent->bOrientRotationToMovement = false;
 	MovementComponent->RotationRate = FRotator(0.f, 720.f, 0.f);
 	MovementComponent->MaxWalkSpeed = 600.f;
-	MovementComponent->bConstrainToPlane = true;
+	MovementComponent->bConstrainToPlane = false;
 	MovementComponent->SetPlaneConstraintNormal(FVector::UpVector);
-	MovementComponent->bSnapToPlaneAtStart = true;
+	MovementComponent->bSnapToPlaneAtStart = false;
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -34,6 +34,10 @@ APJPlayerCharacter::APJPlayerCharacter()
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritRoll = false;
 	CameraBoom->bInheritYaw = false;
+
+	// 부드러운 카메라 추적(Camera Lag) 활성화
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->CameraLagSpeed = 3.f; // 값이 낮을수록 더 부드럽고 느리게 따라갑니다. (기본값 10.f)
 
 	TopDownCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TopDownCamera"));
 	TopDownCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
