@@ -32,10 +32,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> MouseLeftDownAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> RollAction;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> JumpAction;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TopDown")
 	TEnumAsByte<ECollisionChannel> CursorTraceChannel = ECC_Visibility;
 
 private:
 	void Move(const FInputActionValue& Value);
 	void OnMouseLeftDown();
+	void StartRoll();
+	void StartJump();
 };

@@ -7,8 +7,10 @@ public class PJGame : ModuleRules
 	public PJGame(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+		PublicIncludePaths.AddRange(new string[] { ModuleDirectory, System.IO.Path.Combine(ModuleDirectory, "Core"), System.IO.Path.Combine(ModuleDirectory, "Combat") });
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "GameplayAbilities", "GameplayTasks", "GameplayMessageRuntime", "DeveloperSettings" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "AIModule" });
 
