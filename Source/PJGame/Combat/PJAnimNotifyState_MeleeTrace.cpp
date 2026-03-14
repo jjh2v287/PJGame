@@ -2,6 +2,8 @@
 
 #include "PJAnimNotifyState_MeleeTrace.h"
 
+#include "Core/PJCombatLibrary.h"
+#include "Core/PJDamageTypes.h"
 #include "PJCoreInterfaces.h"
 #include "PJGameplayTags.h"
 #include "Animation/AnimInstance.h"
@@ -12,6 +14,27 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Character.h"
+
+namespace
+{
+void DrawTraceDebugSphere(
+	const UWorld* World,
+	const EDrawDebugTrace::Type DrawType,
+	const FVector& Position,
+	const float Radius,
+	const FColor& Color)
+{
+	if (!World || DrawType == EDrawDebugTrace::None)
+	{
+		return;
+	}
+
+	const bool bPersistent = DrawType == EDrawDebugTrace::Persistent;
+	const float LifeTime = DrawType == EDrawDebugTrace::ForDuration ? 1.0f : 0.0f;
+
+	DrawDebugSphere(World, Position, Radius, 12, Color, bPersistent, LifeTime, 0, 1.5f);
+}
+}
 
 // ─────────────────────────────────────────────
 // NotifyBegin — 판정 시작, 인스턴스 데이터 초기화
@@ -64,6 +87,14 @@ void UPJAnimNotifyState_MeleeTrace::NotifyTick(
 	// 현재 본 위치 (2D 투영)
 	const FVector CurrentPos = GetCurrentBoneWorldPos2D(MeshComp);
 
+	// ── 현재 몽타주 위치 (분기 전에 미리 조회 — PrevMontagePosition 항상 갱신을 위해) ──
+	UAnimInstance* AnimInstance = MeshComp->GetAnimInstance();
+	UAnimMontage* Montage = AnimInstance ? AnimInstance->GetCurrentActiveMontage() : nullptr;
+	const float CurrentMontagePos = Montage ? AnimInstance->Montage_GetPosition(Montage) : 0.f;
+
+	DrawTraceDebugSphere(MeshComp->GetWorld(), DebugDrawType, Data.PrevBoneWorldPos2D, 10, FColor::Red);
+	DrawTraceDebugSphere(MeshComp->GetWorld(), DebugDrawType, CurrentPos, 15, FColor::Green);
+
 	// ── 서브스텝 수 결정 ──
 	int32 NumSubSteps = FMath::CeilToInt(FrameDeltaTime / SubStepTargetDelta);
 	NumSubSteps = FMath::Clamp(NumSubSteps, 1, MaxSubSteps);
@@ -73,57 +104,51 @@ void UPJAnimNotifyState_MeleeTrace::NotifyTick(
 		// 프레임 드랍 없음: 단순 Sweep
 		SweepAndDetect(MeshComp, Data.PrevBoneWorldPos2D, CurrentPos, Data);
 	}
+	else if (Montage)
+	{
+		const float PrevMontagePos = Data.PrevMontagePosition;
+		FVector PrevPos = Data.PrevBoneWorldPos2D;
+
+		for (int32 i = 1; i <= NumSubSteps; ++i)
+		{
+			const float Alpha = static_cast<float>(i) / NumSubSteps;
+
+			FVector SamplePos;
+			if (i == NumSubSteps)
+			{
+				// 마지막 스텝은 현재 프레임의 실제 본 위치 사용 (정확도)
+				SamplePos = CurrentPos;
+			}
+			else
+			{
+				// 중간 스텝: 몽타주 시간을 보간하여 애니메이션에서 본 위치 복원
+				const float SampleMontageTime = FMath::Lerp(PrevMontagePos, CurrentMontagePos, Alpha);
+				SamplePos = EvaluateBoneWorldPos2D(MeshComp, SampleMontageTime);
+			}
+
+			SweepAndDetect(MeshComp, PrevPos, SamplePos, Data);
+			PrevPos = SamplePos;
+		}
+	}
 	else
 	{
-		// ── 프레임 드랍 감지 → 애니메이션 로우데이터 보간 ──
-		UAnimInstance* AnimInstance = MeshComp->GetAnimInstance();
-		UAnimMontage* Montage = AnimInstance ? AnimInstance->GetCurrentActiveMontage() : nullptr;
-
-		if (Montage)
+		// 몽타주가 아닌 경우: 선형 보간 폴백
+		FVector PrevPos = Data.PrevBoneWorldPos2D;
+		for (int32 i = 1; i <= NumSubSteps; ++i)
 		{
-			const float CurrentMontagePos = AnimInstance->Montage_GetPosition(Montage);
-			const float PrevMontagePos = Data.PrevMontagePosition;
-
-			FVector PrevPos = Data.PrevBoneWorldPos2D;
-
-			for (int32 i = 1; i <= NumSubSteps; ++i)
-			{
-				const float Alpha = static_cast<float>(i) / NumSubSteps;
-
-				FVector SamplePos;
-				if (i == NumSubSteps)
-				{
-					// 마지막 스텝은 현재 프레임의 실제 본 위치 사용 (정확도)
-					SamplePos = CurrentPos;
-				}
-				else
-				{
-					// 중간 스텝: 몽타주 시간을 보간하여 애니메이션에서 본 위치 복원
-					const float SampleMontageTime = FMath::Lerp(PrevMontagePos, CurrentMontagePos, Alpha);
-					SamplePos = EvaluateBoneWorldPos2D(MeshComp, SampleMontageTime);
-				}
-
-				SweepAndDetect(MeshComp, PrevPos, SamplePos, Data);
-				PrevPos = SamplePos;
-			}
-
-			Data.PrevMontagePosition = CurrentMontagePos;
-		}
-		else
-		{
-			// 몽타주가 아닌 경우: 선형 보간 폴백
-			FVector PrevPos = Data.PrevBoneWorldPos2D;
-			for (int32 i = 1; i <= NumSubSteps; ++i)
-			{
-				const float Alpha = static_cast<float>(i) / NumSubSteps;
-				const FVector SamplePos = FMath::Lerp(Data.PrevBoneWorldPos2D, CurrentPos, Alpha);
-				SweepAndDetect(MeshComp, PrevPos, SamplePos, Data);
-				PrevPos = SamplePos;
-			}
+			const float Alpha = static_cast<float>(i) / NumSubSteps;
+			const FVector SamplePos = FMath::Lerp(Data.PrevBoneWorldPos2D, CurrentPos, Alpha);
+			SweepAndDetect(MeshComp, PrevPos, SamplePos, Data);
+			PrevPos = SamplePos;
 		}
 	}
 
+	// ── 항상 갱신 (분기에 관계없이) ──
 	Data.PrevBoneWorldPos2D = CurrentPos;
+	if (Montage)
+	{
+		Data.PrevMontagePosition = CurrentMontagePos;
+	}
 }
 
 // ─────────────────────────────────────────────
@@ -149,20 +174,13 @@ FString UPJAnimNotifyState_MeleeTrace::GetNotifyName_Implementation() const
 }
 
 // ─────────────────────────────────────────────
-// GetCurrentBoneWorldPos2D — 현재 프레임의 본 위치 (2D)
+// GetCurrentBoneWorldPos2D — 현재 프레임의 본 위치 (TracePlane 투영)
 // ─────────────────────────────────────────────
 
 FVector UPJAnimNotifyState_MeleeTrace::GetCurrentBoneWorldPos2D(USkeletalMeshComponent* MeshComp) const
 {
-	FVector Pos = MeshComp->GetSocketLocation(TraceBoneName);
-
-	// Z를 캐릭터 높이로 고정 → 탑다운 2D 평면 투영
-	if (AActor* Owner = MeshComp->GetOwner())
-	{
-		Pos.Z = Owner->GetActorLocation().Z;
-	}
-
-	return Pos;
+	const FVector Pos = MeshComp->GetSocketLocation(TraceBoneName);
+	return ProjectToPlane(Pos, MeshComp);
 }
 
 // ─────────────────────────────────────────────
@@ -233,15 +251,9 @@ FVector UPJAnimNotifyState_MeleeTrace::EvaluateBoneWorldPos2D(
 	CSPose.InitPose(CompactPose);
 	const FTransform BoneCS = CSPose.GetComponentSpaceTransform(CompactBoneIndex);
 
-	// ── 5단계: 컴포넌트 → 월드 → 2D 투영 ──
-	FVector BoneWorldPos = MeshComp->GetComponentTransform().TransformPosition(BoneCS.GetLocation());
-
-	if (AActor* Owner = MeshComp->GetOwner())
-	{
-		BoneWorldPos.Z = Owner->GetActorLocation().Z;
-	}
-
-	return BoneWorldPos;
+	// ── 5단계: 컴포넌트 → 월드 → TracePlane 투영 ──
+	const FVector BoneWorldPos = MeshComp->GetComponentTransform().TransformPosition(BoneCS.GetLocation());
+	return ProjectToPlane(BoneWorldPos, MeshComp);
 }
 
 // ─────────────────────────────────────────────
@@ -304,9 +316,50 @@ void UPJAnimNotifyState_MeleeTrace::SweepAndDetect(
 		Data.AlreadyHitActors.Add(WeakHit);
 
 		// IPJDamageable 인터페이스로 데미지 적용
-		if (HitActor->GetClass()->ImplementsInterface(UPJDamageable::StaticClass()))
-		{
-			IPJDamageable::Execute_ApplyDamage(HitActor, DamageAmount, DamageTypeTag, Owner);
-		}
+		FPJDamageSpec DamageSpec;
+		DamageSpec.Amount = DamageAmount;
+		DamageSpec.DamageType = DamageTypeTag;
+		DamageSpec.Instigator = Owner;
+		DamageSpec.Causer = Owner;
+		UPJCombatLibrary::TryApplyDamage(HitActor, DamageSpec);
 	}
+}
+
+// ─────────────────────────────────────────────
+// ProjectToPlane — TracePlane 에 따라 특정 축을 Actor 위치로 고정
+// ─────────────────────────────────────────────
+
+FVector UPJAnimNotifyState_MeleeTrace::ProjectToPlane(
+	const FVector& WorldPos,
+	const USkeletalMeshComponent* MeshComp) const
+{
+	if (!MeshComp) return WorldPos;
+
+	const AActor* Owner = MeshComp->GetOwner();
+	if (!Owner) return WorldPos;
+
+	// 메시 로컬 축 기준으로 평면을 고정해야 메시 상대 회전(-90 yaw 등)이 있어도
+	// 인게임과 프리뷰에서 동일한 축 기준으로 투영된다.
+	const FTransform& MeshTransform = MeshComp->GetComponentTransform();
+	const FVector LocalPos = MeshTransform.InverseTransformPosition(WorldPos);
+	const FVector LocalOrigin = MeshTransform.InverseTransformPosition(Owner->GetActorLocation());
+
+	FVector ProjectedLocal = LocalPos;
+	
+	if (TraceIgnoreX)
+	{
+		ProjectedLocal.X = LocalOrigin.X;
+	}
+	
+	if (TraceIgnoreY)
+	{
+		ProjectedLocal.Y = LocalOrigin.Y;
+	}
+	
+	if (TraceIgnoreZ)
+	{
+		ProjectedLocal.Z = LocalOrigin.Z;
+	}
+
+	return MeshTransform.TransformPosition(ProjectedLocal);
 }

@@ -10,9 +10,7 @@ public class PJGame : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] { ModuleDirectory, System.IO.Path.Combine(ModuleDirectory, "Core"), System.IO.Path.Combine(ModuleDirectory, "Combat") });
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "GameplayAbilities", "GameplayTasks", "GameplayMessageRuntime", "DeveloperSettings" });
-
-		PrivateDependencyModuleNames.AddRange(new string[] { "AIModule" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "GameplayMessageRuntime", "DeveloperSettings", "AIModule" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

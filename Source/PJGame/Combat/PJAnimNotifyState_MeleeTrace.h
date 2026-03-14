@@ -9,6 +9,7 @@
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "PJAnimNotifyState_MeleeTrace.generated.h"
 
+
 /**
  * 공격 판정용 런타임 데이터 (인스턴스별).
  * 같은 몽타주를 여러 캐릭터가 동시에 재생해도 각각 독립 동작.
@@ -43,9 +44,18 @@ class PJGAME_API UPJAnimNotifyState_MeleeTrace : public UAnimNotifyState
 public:
 	// ── 트레이스 설정 ──
 
-	/** 추적할 본 이름 (검끝, 손목 등) */
+	/** 추적할 본 이름 (검끝의 단 또는 손목 등 피벗 본) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trace")
 	FName TraceBoneName = TEXT("hand_r");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trace")
+	bool TraceIgnoreX = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trace")
+	bool TraceIgnoreY = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trace")
+	bool TraceIgnoreZ = false;
 
 	/** 박스 트레이스 절반 크기 (X=전방, Y=좌우, Z=높이) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trace")
@@ -58,14 +68,6 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trace")
 	TArray<TEnumAsByte<EObjectTypeQuery>> TraceObjectTypes;
-
-	/**
-	 * Z축(높이) 움직임을 무시하고 캐릭터 중심의 2D 평면에 투영할지 여부.
-	 * - true: (기본값) 탑다운 좌우 횡베기에 적합.
-	 * - false: 위/아래(수직) 내려찍기나 올려치기의 3D 궤적을 그대로 반영.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Trace")
-	bool bProjectTo2D = true;
 
 	// ── 프레임 드랍 보정 (Sub-Step) ──
 
@@ -99,10 +101,10 @@ public:
 	virtual FString GetNotifyName_Implementation() const override;
 
 private:
-	/** 인스턴스별 런타임 데이터 (MeshComp 키) */
-	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FPJMeleeTraceInstanceData> InstanceDataMap;
+	/** 인스턴스별 런타임 데이터 (MeshComp 키, raw pointer — WeakPtr 해시 불안정 방지) */
+	TMap<USkeletalMeshComponent*, FPJMeleeTraceInstanceData> InstanceDataMap;
 
-	/** 현재 프레임의 본 월드 위치 */
+	/** 현재 프레임의 본 월드 위치 (TracePlane 에 따라 투영) */
 	FVector GetCurrentBoneWorldPos2D(USkeletalMeshComponent* MeshComp) const;
 
 	/**
@@ -113,4 +115,12 @@ private:
 
 	/** SweepTrace + 히트 처리 */
 	void SweepAndDetect(USkeletalMeshComponent* MeshComp, const FVector& Start, const FVector& End, FPJMeleeTraceInstanceData& Data);
+
+	/**
+	 * TracePlane 설정에 따라 3D 좌표의 특정 축을 고정하여 2D 투영.
+	 *   XY → Z 를 Owner ActorLocation.Z 로 고정
+	 *   XZ → Y 를 Owner ActorLocation.Y 로 고정
+	 *   YZ → X 를 Owner ActorLocation.X 로 고정
+	 */
+	FVector ProjectToPlane(const FVector& WorldPos, const USkeletalMeshComponent* MeshComp) const;
 };

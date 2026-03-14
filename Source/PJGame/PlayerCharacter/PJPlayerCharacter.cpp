@@ -1,13 +1,17 @@
 // Copyright PJGame. All Rights Reserved.
 
-#include "PJPlayerCharacter.h"
+#include "PlayerCharacter/PJPlayerCharacter.h"
 
-#include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "PJHealthSet.h"
-#include "PJGameplayTags.h"
-#include "PJMessageTypes.h"
+#include "Core/PJCombatLibrary.h"
+#include "Core/PJDamageTypes.h"
+#include "Core/PJGameplayTags.h"
+#include "Core/PJMessageTypes.h"
+#include "Core/PJStatsComponent.h"
+#include "Core/PJTeamComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -30,18 +34,15 @@ APJPlayerCharacter::APJPlayerCharacter()
 	MovementComponent->SetPlaneConstraintNormal(FVector::UpVector);
 	MovementComponent->bSnapToPlaneAtStart = false;
 
-	// ── Camera ──
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->SetUsingAbsoluteRotation(true);
-	CameraBoom->TargetArmLength = 1200.f;
+	CameraBoom->TargetArmLength = 900.f;
 	CameraBoom->SetRelativeRotation(FRotator(-60.f, 0.f, 0.f));
 	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritRoll = false;
 	CameraBoom->bInheritYaw = false;
-
-	// 부드러운 카메라 추적(Camera Lag) 활성화
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 3.f;
 
@@ -49,105 +50,113 @@ APJPlayerCharacter::APJPlayerCharacter()
 	TopDownCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	TopDownCamera->bUsePawnControlRotation = false;
 
-	// ── GAS ──
-	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-
-	// HealthSet은 ASC의 서브오브젝트로 생성 — ASC가 자동으로 등록 관리
-	HealthSet = CreateDefaultSubobject<UPJHealthSet>(TEXT("HealthSet"));
+	StatsComponent = CreateDefaultSubobject<UPJStatsComponent>(TEXT("StatsComponent"));
+	TeamComponent = CreateDefaultSubobject<UPJTeamComponent>(TEXT("TeamComponent"));
+	TeamComponent->SetTeamId(EPJTeamId::Player);
 }
 
 void APJPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// ASC 초기화
-	if (AbilitySystemComponent)
+	if (StatsComponent)
 	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this);
-	}
-
-	// HealthSet 사망 델리게이트 바인딩
-	if (HealthSet)
-	{
-		HealthSet->OnHealthDepleted.AddUObject(this, &ThisClass::HandleHealthDepleted);
+		StatsComponent->OnDeath.AddUObject(this, &ThisClass::HandleDeath);
 	}
 }
 
-// ─────────────────────────────────────────────
-// IAbilitySystemInterface
-// ─────────────────────────────────────────────
-
-UAbilitySystemComponent* APJPlayerCharacter::GetAbilitySystemComponent() const
+FGenericTeamId APJPlayerCharacter::GetGenericTeamId() const
 {
-	return AbilitySystemComponent;
+	return TeamComponent ? TeamComponent->GetGenericTeamId() : FGenericTeamId::NoTeam;
 }
-
-// ─────────────────────────────────────────────
-// IPJDamageable — 어떤 시스템이든 이 인터페이스로 데미지 적용 가능
-// ─────────────────────────────────────────────
 
 float APJPlayerCharacter::ApplyDamage_Implementation(float Amount, FGameplayTag DamageType, AActor* DamageInstigator)
 {
-	if (!AbilitySystemComponent || Amount <= 0.f)
+	if (!StatsComponent)
 	{
 		return 0.f;
 	}
 
-	// GE를 동적으로 생성하여 IncomingDamage 메타 어트리뷰트에 데미지 적용
-	FGameplayEffectSpecHandle SpecHandle = AbilitySystemComponent->MakeOutgoingSpec(
-		UGameplayEffect::StaticClass(), 1.f, AbilitySystemComponent->MakeEffectContext());
-
-	if (SpecHandle.IsValid())
-	{
-		// IncomingDamage에 Additive Modifier로 데미지 값 설정
-		SpecHandle.Data->SetSetByCallerMagnitude(DamageType, Amount);
-	}
-
-	// 간단한 직접 적용 방식 (SetByCallerMagnitude 대신)
-	// PostGameplayEffectExecute에서 처리되도록 직접 어트리뷰트 수정
-	const float OldHealth = HealthSet->GetHealth();
-	const float NewHealth = FMath::Clamp(OldHealth - Amount, 0.f, HealthSet->GetMaxHealth());
-	AbilitySystemComponent->SetNumericAttributeBase(UPJHealthSet::GetHealthAttribute(), NewHealth);
-
-	// 변경 알림 (UI 등이 구독)
-	HealthSet->OnHealthChanged.Broadcast(this, OldHealth, NewHealth, DamageInstigator);
-
-	// 사망 판정
-	if (NewHealth <= 0.f)
-	{
-		HealthSet->OnHealthDepleted.Broadcast(this);
-	}
-
-	return OldHealth - NewHealth;
+	FPJDamageSpec DamageSpec;
+	DamageSpec.Amount = Amount;
+	DamageSpec.DamageType = DamageType;
+	DamageSpec.Instigator = DamageInstigator;
+	DamageSpec.Causer = DamageInstigator;
+	return StatsComponent->ApplyDamage(DamageSpec);
 }
 
 float APJPlayerCharacter::GetCurrentHealth_Implementation() const
 {
-	return HealthSet ? HealthSet->GetHealth() : 0.f;
+	return StatsComponent ? StatsComponent->GetCurrentHealth() : 0.f;
 }
 
 bool APJPlayerCharacter::IsAlive_Implementation() const
 {
-	return HealthSet && HealthSet->GetHealth() > 0.f;
+	return StatsComponent && StatsComponent->IsAlive();
 }
 
-// ─────────────────────────────────────────────
-// Death
-// ─────────────────────────────────────────────
-
-void APJPlayerCharacter::HandleHealthDepleted(AActor* OwningActor)
+float APJPlayerCharacter::GetDesiredAttackRange() const
 {
-	UE_LOG(LogTemp, Warning, TEXT("%s has died!"), *GetName());
+	return AttackMode == EPJAttackMode::Ranged ? RangedAttackRange : MeleeAttackRange;
+}
 
-	// 이벤트 버스로 사망 메시지 발행 — 다른 시스템이 반응 가능
+bool APJPlayerCharacter::IsAttackReady() const
+{
+	if (!StatsComponent || !StatsComponent->IsAlive())
+	{
+		return false;
+	}
+
+	return GetWorld() && (GetWorld()->GetTimeSeconds() - LastAttackTime) >= AttackCooldown;
+}
+
+bool APJPlayerCharacter::ExecutePrimaryAttack(AActor* TargetActor)
+{
+	if (!TargetActor || !IsAttackReady())
+	{
+		return false;
+	}
+
+	const FVector ToTarget = TargetActor->GetActorLocation() - GetActorLocation();
+	if (!ToTarget.IsNearlyZero())
+	{
+		SetActorRotation(ToTarget.Rotation());
+	}
+
+	if (PrimaryAttackMontage)
+	{
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			AnimInstance->Montage_Play(PrimaryAttackMontage);
+		}
+	}
+
+	if (AttackMode == EPJAttackMode::Ranged || !PrimaryAttackMontage)
+	{
+		FPJDamageSpec DamageSpec;
+		DamageSpec.Amount = StatsComponent ? StatsComponent->GetAttackPower() : 0.f;
+		DamageSpec.DamageType = PJGameplayTags::TAG_Damage_Physical;
+		DamageSpec.Instigator = this;
+		DamageSpec.Causer = this;
+		UPJCombatLibrary::TryApplyDamage(TargetActor, DamageSpec);
+	}
+
+	LastAttackTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastAttackTime;
+	return true;
+}
+
+void APJPlayerCharacter::HandleDeath(AActor* OwningActor, AActor* KillerActor)
+{
+	GetCharacterMovement()->DisableMovement();
+	SetActorEnableCollision(false);
+
 	if (UWorld* World = GetWorld())
 	{
-		UGameplayMessageSubsystem& MsgSys = UGameplayMessageSubsystem::Get(World);
+		FPJActorDeathMessage DeathMessage;
+		DeathMessage.DeadActor = this;
+		DeathMessage.Killer = KillerActor;
+		DeathMessage.DeathLocation = GetActorLocation();
 
-		FPJActorDeathMessage DeathMsg;
-		DeathMsg.DeadActor = this;
-		DeathMsg.DeathLocation = GetActorLocation();
-
-		MsgSys.BroadcastMessage(PJGameplayTags::TAG_Event_Actor_Death, DeathMsg);
+		UGameplayMessageSubsystem::Get(World).BroadcastMessage(PJGameplayTags::TAG_Event_Actor_Death, DeathMessage);
 	}
 }

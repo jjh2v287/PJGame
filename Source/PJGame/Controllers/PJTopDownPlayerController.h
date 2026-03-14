@@ -7,6 +7,8 @@
 #include "InputActionValue.h"
 #include "PJTopDownPlayerController.generated.h"
 
+class AActor;
+class APJPlayerCharacter;
 class UInputAction;
 class UInputMappingContext;
 
@@ -46,4 +48,14 @@ private:
 	void OnMouseLeftDown();
 	void StartRoll();
 	void StartJump();
+
+	void HandleLeftClickHit(const FHitResult& HitResult);
+	void IssueMoveCommand(const FVector& WorldLocation);
+	void IssueAttackCommand(AActor* TargetActor);
+	void UpdateQueuedAttack();
+	void ClearQueuedAttack();
+	APJPlayerCharacter* GetPJPlayerCharacter() const;
+
+	TWeakObjectPtr<AActor> QueuedAttackTarget;
+	bool bAttackMoveQueued = false;
 };
